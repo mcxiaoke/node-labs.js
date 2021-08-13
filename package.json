@@ -1,0 +1,27 @@
+{
+  "name": "dongle-mgr",
+  "version": "1.0.0",
+  "description": "Benteng LTE Dongle Manager",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mcxiaoke/dongle-mgr.js.git"
+  },
+  "keywords": [
+    "lte",
+    "dongle"
+  ],
+  "author": " <Zhang Xiaoke github@mcxiaoke.com>",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/mcxiaoke/dongle-mgr.js/issues"
+  },
+  "homepage": "https://github.com/mcxiaoke/dongle-mgr.js#readme",
+  "dependencies": {
+    "axios": "^0.21.1",
+    "node-fetch": "^2.6.1"
+  }
+}
