@@ -2,10 +2,6 @@ const fetch = require("node-fetch");
 const HttpsProxyAgent = require("https-proxy-agent");
 const { URLSearchParams, URL } = require("url");
 
-const WX_REPORT_URL = process.env.APP_WX_REPORT_URL;
-const TG_REPORT_URL = process.env.APP_TG_REPORT_URL;
-const HTTP_PROXY = process.env.APP_HTTP_PROXY || process.env.http_proxy;
-
 function humanTime(startMs) {
   // TIP: to find current time in milliseconds, use:
   // var  current_time_milliseconds = new Date().getTime();
@@ -127,7 +123,7 @@ function IsGSM7Code(str) {
 }
 
 async function sendWX(title, desp) {
-  const url = new URL(WX_REPORT_URL);
+  const url = new URL(process.env.APP_WX_REPORT_URL);
   const params = new URLSearchParams({ title: title, desp: desp });
   url.search = params.toString();
 
@@ -144,9 +140,12 @@ async function sendWX(title, desp) {
 }
 
 async function sendTG(title, desp) {
-  const proxy = HTTP_PROXY || "http://127.0.0.1:2081";
+  const proxy =
+    process.env.APP_HTTP_PROXY ||
+    process.env.http_proxy ||
+    "http://127.0.0.1:2081";
   const agent = new HttpsProxyAgent(proxy);
-  const url = new URL(TG_REPORT_URL);
+  const url = new URL(process.env.APP_TG_REPORT_URL);
   const params = new URLSearchParams({ text: `${title}\n${desp}` });
   console.log("sendTG", title, desp);
   try {

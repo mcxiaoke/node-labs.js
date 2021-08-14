@@ -3,13 +3,12 @@ const _ = require("lodash");
 const fetch = require("node-fetch");
 const toad = require("toad-scheduler");
 const helper = require("./helper");
-const { hex_md5 } = require("./md5");
-require("dotenv").config();
-// for (const [k, v] of Object.entries(process.env)) {
-//   if (k.startsWith("APP_")) {
-//     console.log(k, v);
-//   }
-// }
+const { md5: hex_md5 } = require("pure-md5");
+const config = require("dotenv").config();
+const DEBUG = process.env.DEBUG;
+if (DEBUG) {
+  console.log(config);
+}
 
 const BASE_URL = process.env.APP_BASE_URL || "http://192.168.4.1";
 
@@ -137,6 +136,11 @@ function hex(d) {
   //alert("h" + h);
   //    return parseInt(str.toString(), 16);
 }
+/**
+ *
+ * @param {*} requestType GET or POST
+ * @returns authrization header with signature
+ */
 function getAuthHeader(requestType) {
   // return getCookie("Authheader");
   const hasAuth = gUsername && gPasswd && gRealm && gNonce && gQop;
@@ -198,6 +202,10 @@ function getAuthHeader(requestType) {
   );
 }
 
+/**
+ *
+ * @param {*} params parse WWW-Authenticate
+ */
 async function parseAuthParams(params) {
   try {
     if (!params) {
@@ -216,6 +224,10 @@ async function parseAuthParams(params) {
   }
 }
 
+/**
+ *
+ * @returns build login URL
+ */
 async function getLoginUrl() {
   let rand, date, salt;
   let tmp, DigestRes;
@@ -263,6 +275,11 @@ async function getLoginUrl() {
   );
 }
 
+/**
+ *
+ * @param {*} fetchParams fetch WWW-Authenticate again
+ * @returns login successful
+ */
 async function doLogin(fetchParams = true) {
   try {
     fetchParams && (await parseAuthParams());
@@ -286,13 +303,21 @@ async function doLogin(fetchParams = true) {
   return false;
 }
 
+/**
+ * send api request
+ * @param {*} jsonName API path name
+ * @param {*} body POST body object
+ * @returns HTTP response object
+ */
 async function doRequest(jsonName, body = undefined) {
   method = body ? "post" : "get";
   const url =
     BASE_URL +
     `/xml_action.cgi?method=${method}&module=duster&file=json_${jsonName}${new Date().getTime()}`;
 
-  log("request api:", method, jsonName, body || "");
+  if (DEBUG) {
+    log("request api:", method, jsonName, body || "");
+  }
   const authHeader = getAuthHeader(method.toUpperCase());
   // log("request auth:", authHeader);
   const res = await fetch(url, {
@@ -306,6 +331,13 @@ async function doRequest(jsonName, body = undefined) {
   return res;
 }
 
+/**
+ *
+ * send api request with login check and retry
+ * @param {*} jsonName API path name
+ * @param {*} body POST body object
+ * @returns HTTP response data
+ */
 async function sendRequest(jsonName, body = undefined) {
   const hasAuth = gNonce && gNonce.length > 2 && gRealm && gRealm.length > 2;
   try {
@@ -344,6 +376,11 @@ async function sendRequest(jsonName, body = undefined) {
   }
 }
 
+/**
+ * delete sms
+ * @param {*} ids message ids
+ * @returns delete result
+ */
 async function smsDelete(ids) {
   if (!ids || ids.length == 0) {
     return;
@@ -364,11 +401,17 @@ async function smsDelete(ids) {
   if (!result) {
     log("smsDelete: failed to delete", ids);
   } else {
-    log(result);
+    // log(result);
     log("smsDelete: success to delete", ids);
   }
+  return result;
 }
 
+/**
+ * read sms
+ * @param {*} msgId message id
+ * @returns read result
+ */
 async function smsRead(msgId) {
   if (!msgId || msgId.length == 0) {
     return;
@@ -387,8 +430,15 @@ async function smsRead(msgId) {
     // log(result);
     log("smsRead: success to read", msgId);
   }
+  return result;
 }
 
+/**
+ * send sms
+ * @param {*} phoneNo phone number send to
+ * @param {*} text sms text content
+ * @returns send result
+ */
 async function smsSend(phoneNo, text) {
   if (!phoneNo || !text) {
     log("smsSend: need phoneNo and text");
@@ -416,11 +466,17 @@ async function smsSend(phoneNo, text) {
   if (!result) {
     log("smsSend: failed to send", phoneNo, text);
   } else {
-    log(result);
+    // log(result);
     log("smsSend: success to send", phoneNo, text);
   }
+  return result;
 }
 
+/**
+ * decode sms subject and from
+ * @param {*} data sms json object
+ * @returns decoded sms object
+ */
 function smsDecode(data) {
   const items = data["Item"];
   if (!items || items.length == 0) {
@@ -435,6 +491,12 @@ function smsDecode(data) {
   return data;
 }
 
+/**
+ * fetch sms inbox messages
+ * @param {*} pageNo page index
+ * @param {*} perPage count per index
+ * @returns decoded sms inbox
+ */
 async function smsGetInbox(pageNo = 1, perPage = 10) {
   // sms inbox
   let body = {
@@ -447,6 +509,11 @@ async function smsGetInbox(pageNo = 1, perPage = 10) {
   return smsDecode(result);
 }
 
+/**
+ * filter unread sms messages
+ * @param {*} data inbox object
+ * @returns filtered messages
+ */
 async function smsFilter(data) {
   let items = data["Item"];
   if (!items || items.length == 0) {
@@ -461,8 +528,15 @@ async function smsFilter(data) {
   return items.map((it) => _.pick(it, allowed));
 }
 
+/**
+ * sms inbox check all
+ * @returns nothing
+ */
 async function smsCheck() {
-  console.log("------------------------------", ++gTaskCount);
+  ++gTaskCount;
+  if (DEBUG) {
+    console.log("------------------------------", gTaskCount);
+  }
   log(`smsCheck(${gTaskCount}) up time:`, helper.humanTime(BOOT_TIME));
   // GET_RCV_SMS_LOCAL 本地收件箱
   // GET_SENT_SMS_LOCAL 本地发件箱
@@ -505,7 +579,7 @@ async function smsCheck() {
   }
   let unreadNum = status["sms_unread_long_num"] || 0;
   if (unreadNum == 0) {
-    log("smsCheck: no unread messages.");
+    log("smsCheck: no unread messages.", gTaskCount);
     return;
   }
   log("smsCheck: sms unread count:", status["sms_unread_long_num"]);
@@ -571,6 +645,9 @@ async function smsCheck() {
   }
 }
 
+/**
+ * sms check task running forever
+ */
 async function main() {
   const scheduler = new toad.ToadScheduler();
   const task = new toad.AsyncTask("smsCheck", smsCheck, (err) => {
@@ -581,4 +658,4 @@ async function main() {
   log("smsCheck scheduled task started!");
 }
 
-module.exports.main = main;
+main();
