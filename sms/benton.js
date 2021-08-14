@@ -19,6 +19,10 @@ function log(...args) {
   console.log(...[dayjs(new Date()).format("YYYY-MM-DD HH:mm:ss"), ...args]);
 }
 
+function loge(...args) {
+  console.error(...[dayjs(new Date()).format("YYYY-MM-DD HH:mm:ss"), ...args]);
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -220,7 +224,7 @@ async function parseAuthParams(params) {
     gNonce = getValue(arr[2]);
     gQop = getValue(arr[3]);
   } catch (error) {
-    console.error("parseAuthParams: error", error);
+    loge("parseAuthParams: error", error);
   }
 }
 
@@ -298,7 +302,7 @@ async function doLogin(fetchParams = true) {
     log("do login success:", ret, res.status);
     return ret;
   } catch (error) {
-    log("do login failed:", error);
+    loge("do login failed:", error);
   }
   return false;
 }
@@ -326,6 +330,7 @@ async function doRequest(jsonName, body = undefined) {
     headers: {
       Authorization: authHeader,
     },
+    timeout: 2000,
   });
   // log("request res:", res.status, res.headers.get("WWW-Authenticate") || "OK");
   return res;
@@ -343,7 +348,7 @@ async function sendRequest(jsonName, body = undefined) {
   try {
     // if (!hasAuth) {
     if (!hasAuth && jsonName !== "status") {
-      log("send request no auth, need login");
+      loge("send request no auth, need login");
       const loginSuccess = await doLogin(true);
       if (!loginSuccess) {
         throw Error("login failed!");
@@ -353,7 +358,7 @@ async function sendRequest(jsonName, body = undefined) {
     }
     let res = await doRequest(jsonName, body);
     if (res.headers.has("WWW-Authenticate")) {
-      log("send request need login, retry");
+      loge("send request need login, retry");
       clearAuthheader();
       await parseAuthParams(res.headers.get("WWW-Authenticate"));
       const loginSuccess = await doLogin(false);
@@ -372,7 +377,7 @@ async function sendRequest(jsonName, body = undefined) {
       }
     }
   } catch (error) {
-    log("send request error:", String(error), jsonName);
+    loge("send request ", String(error), jsonName);
   }
 }
 
@@ -399,7 +404,7 @@ async function smsDelete(ids) {
   };
   const result = await sendRequest("message", body);
   if (!result) {
-    log("smsDelete: failed to delete", ids);
+    loge("smsDelete: failed to delete", ids);
   } else {
     // log(result);
     log("smsDelete: success to delete", ids);
@@ -425,7 +430,7 @@ async function smsRead(msgId) {
   };
   const result = await sendRequest("message", body);
   if (!result) {
-    log("smsRead: failed to read", msgId);
+    loge("smsRead: failed to read", msgId);
   } else {
     // log(result);
     log("smsRead: success to read", msgId);
@@ -441,11 +446,11 @@ async function smsRead(msgId) {
  */
 async function smsSend(phoneNo, text) {
   if (!phoneNo || !text) {
-    log("smsSend: need phoneNo and text");
+    loge("smsSend: need phoneNo and text");
     return;
   }
   if (!/^\+?\d+$/.test(phoneNo)) {
-    log("smsSend: invalid phoneNo");
+    loge("smsSend: invalid phoneNo");
     return;
   }
   let encodeType = "UNICODE";
@@ -464,7 +469,7 @@ async function smsSend(phoneNo, text) {
   log("smsSend:", body);
   const result = await sendRequest("message", body);
   if (!result) {
-    log("smsSend: failed to send", phoneNo, text);
+    loge("smsSend: failed to send", phoneNo, text);
   } else {
     // log(result);
     log("smsSend: success to send", phoneNo, text);
@@ -504,7 +509,7 @@ async function smsGetInbox(pageNo = 1, perPage = 10) {
     page_number: pageNo,
     data_per_page: perPage,
   };
-  log("smsGetInbox", body);
+  // log("smsGetInbox", body);
   const result = await sendRequest("message", body);
   return smsDecode(result);
 }
@@ -519,7 +524,7 @@ async function smsFilter(data) {
   if (!items || items.length == 0) {
     return [];
   }
-  const allowed = ["index", "subject", "sender", "received", "status"];
+  const allowed = ["index", "subject", "sender", "received"];
   items = items.filter((it) => it.subject && it.status === 0);
   // sort by message_time_index
   items = items.sort(
@@ -564,7 +569,7 @@ async function smsCheck() {
   // log(device);
   let status = await sendRequest("status");
   if (!(typeof status == "object")) {
-    log("smsCheck: failed to get sms status.");
+    loge("smsCheck: failed to get sms status.");
     return;
   }
   // log(status);
@@ -574,7 +579,7 @@ async function smsCheck() {
     status["operator_name"].length === 0 ||
     status["MSISDN"].length === 0
   ) {
-    log("smsCheck: no sim or no service");
+    loge("smsCheck: no sim or no service");
     return;
   }
   let unreadNum = status["sms_unread_long_num"] || 0;
@@ -585,14 +590,14 @@ async function smsCheck() {
   log("smsCheck: sms unread count:", status["sms_unread_long_num"]);
   status = await sendRequest("message");
   if (!(typeof status == "object")) {
-    log("smsCheck: failed to get inbox status.");
+    loge("smsCheck: failed to get inbox status.");
     return;
   }
   if (status["sms_nv_rev_num"] + 20 > status["sms_nv_rev_total"]) {
     // todo clear old sms items
     const total = status["sms_nv_rev_total"];
     const num = status["sms_nv_rev_num"];
-    log("smsCheck: no enough space:", num, total);
+    loge("smsCheck: no enough space:", num, total);
     const toDeleteIDs = Array(Math.floor(num / 2))
       .fill()
       .map((v, i) => `LRCV${i + 1}`);
@@ -612,7 +617,7 @@ async function smsCheck() {
   const fetchNum = Math.max(5, unreadNum + 1);
   let inbox = await smsGetInbox(1, fetchNum);
   if (!inbox) {
-    log("smsCheck: failed to get inbox.");
+    loge("smsCheck: failed to get inbox.");
     return;
   }
   // log(inbox);
@@ -648,14 +653,14 @@ async function smsCheck() {
 /**
  * sms check task running forever
  */
-async function main() {
+async function main(intervalSecs = 5) {
   const scheduler = new toad.ToadScheduler();
   const task = new toad.AsyncTask("smsCheck", smsCheck, (err) => {
-    log("smsCheck:", err);
+    loge("smsCheck:", err);
   });
-  const job = new toad.SimpleIntervalJob({ seconds: 5 }, task);
+  const job = new toad.SimpleIntervalJob({ seconds: intervalSecs }, task);
   scheduler.addSimpleIntervalJob(job);
   log("smsCheck scheduled task started!");
 }
 
-main();
+module.exports.main = main;

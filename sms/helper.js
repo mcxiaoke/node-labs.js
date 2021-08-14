@@ -131,7 +131,7 @@ async function sendWX(title, desp) {
   try {
     const res = await fetch(url);
     const text = await res.json();
-    console.log("sendWX res:", res.status);
+    console.log("sendWX res:", res.status, title);
     return true;
   } catch (error) {
     console.log("sendWX error:", error);
@@ -155,7 +155,7 @@ async function sendTG(title, desp) {
       agent: agent,
     });
     const text = await res.json();
-    console.log("sendTG res:", res.status);
+    console.log("sendTG res:", res.status, title);
     return true;
   } catch (error) {
     console.log("sendTG error:", error);
