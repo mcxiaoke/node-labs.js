@@ -2,8 +2,8 @@ const dayjs = require("dayjs");
 const _ = require("lodash");
 const fetch = require("node-fetch");
 const toad = require("toad-scheduler");
-const helper = require("./helper");
 const { md5: hex_md5 } = require("pure-md5");
+const helper = require("../lib/helper");
 const config = require("dotenv").config();
 const DEBUG = process.env.DEBUG;
 if (DEBUG) {
@@ -27,10 +27,6 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function onlyDigits(str) {
-  return /^\d+$/.test(str);
-}
-
 var gQop,
   gCount = 1,
   gRealm,
@@ -43,29 +39,6 @@ function clearAuthheader() {
   gQop = "";
   gCount = "";
   gRealm = "";
-}
-
-function convertValue(data) {
-  if (!typeof data === "object") {
-    return;
-  }
-  for (const [k, v] of Object.entries(data)) {
-    // caution: do not replace this entry value to number
-    if (k === "subject" || k === "from" || k === "received") {
-      continue;
-    }
-    //  && !Number.isNaN(parseInt(v))
-    if (typeof v === "string" && onlyDigits(v)) {
-      data[k] = parseInt(v);
-    } else if (typeof v === "object") {
-      convertValue(v);
-    } else if (Array.isArray(v)) {
-      for (const item of v) {
-        convertValue(item);
-      }
-    }
-  }
-  return data;
 }
 
 function parseSmsTime(recvTime) {
@@ -373,7 +346,7 @@ async function sendRequest(jsonName, body = undefined) {
     if (data && data.length > 0) {
       const json = JSON.parse(data);
       if (json) {
-        return convertValue(json);
+        return helper.convertValue(json);
       }
     }
   } catch (error) {
