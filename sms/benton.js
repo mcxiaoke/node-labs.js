@@ -1,7 +1,6 @@
 const dayjs = require("dayjs");
 const _ = require("lodash");
 const fetch = require("node-fetch");
-const toad = require("toad-scheduler");
 const { md5: hex_md5 } = require("pure-md5");
 const helper = require("../lib/helper");
 const { log, loge, sleep } = helper;
@@ -635,22 +634,9 @@ async function smsCheck() {
   }
 }
 
-/**
- * sms check task running forever
- */
-async function main(intervalSecs = 5) {
-  // if ((!(await isPortOpen("192.168.4.1")), 80)) {
-  if (process.platform.includes("win")) {
-    BASE_URL = "http://lte.mcxiaoke.com";
-  }
-  const scheduler = new toad.ToadScheduler();
-  const task = new toad.AsyncTask("smsCheck", smsCheck, (err) => {
-    loge("smsCheck:", err);
-  });
-  const job = new toad.SimpleIntervalJob({ seconds: intervalSecs }, task);
-  scheduler.addSimpleIntervalJob(job);
-  log("smsCheck BASE_URL:", BASE_URL);
-  log("smsCheck scheduled task started!");
+function setBaseUrl(url) {
+  BASE_URL = url;
+  log("setBaseUrl:", url);
 }
 
 module.exports = {
@@ -658,5 +644,5 @@ module.exports = {
   smsRead,
   smsSend,
   smsCheck,
-  main,
+  setBaseUrl,
 };

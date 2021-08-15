@@ -80,17 +80,17 @@ async function sendReport(upHosts, downHosts) {
   }
 }
 
-async function check() {
+async function lanCheck() {
   ++gTaskCount;
   let hosts = (await getOnlineHosts()) || [];
   if (!hosts || hosts.length === 0) {
-    log("check: failed to get online hosts");
+    log("lanCheck: failed to get online hosts");
     return;
   }
   const jsonConfig = require("../lib/private.json")["APP_WHITELIST"];
   WHITELIST = new Set(jsonConfig);
   log(
-    `check(${gTaskCount}): online hosts ${gHosts.length} => ${hosts.length} up time:`,
+    `lanCheck(${gTaskCount}): online hosts ${gHosts.length} => ${hosts.length} up time:`,
     humanTime(BOOT_TIME)
   );
   let macSet = new Set(hosts.map((it) => it["mac"]));
@@ -113,7 +113,7 @@ async function check() {
   if (upHosts.length == 0 && downHosts.length == 0) {
     return;
   }
-  log("check:", "up:", strObj(upHosts), "down:", strObj(downHosts));
+  log("lanCheck:", "up:", strObj(upHosts), "down:", strObj(downHosts));
 
   if (WHITELIST && WHITELIST.size > 0) {
     upHosts = upHosts.filter((it) => WHITELIST.has(it["mac"]));
@@ -123,26 +123,12 @@ async function check() {
   if (upHosts.length == 0 && downHosts.length == 0) {
     return;
   }
-  log("Online:", upHosts, "Offline:", downHosts);
+  log("lanCheck: Online:", upHosts, "Offline:", downHosts);
   gLastChanged = { up: upHosts, down: downHosts };
   await filelog(gLastChanged);
   await sendReport(upHosts, downHosts);
 }
 
-async function main(intervalSecs = 20) {
-  const scheduler = new toad.ToadScheduler();
-  const task = new toad.AsyncTask("check", check, (err) => {
-    loge("check:", err);
-  });
-  const job = new toad.SimpleIntervalJob({ seconds: intervalSecs }, task);
-  scheduler.addSimpleIntervalJob(job);
-  log("check scheduled task started!");
-}
-
-main();
-
-async function test() {
-  await sendTG("hello", "this is a message");
-}
-
-// test();
+module.exports = {
+  lanCheck,
+};
