@@ -4,28 +4,19 @@ const fetch = require("node-fetch");
 const toad = require("toad-scheduler");
 const { md5: hex_md5 } = require("pure-md5");
 const helper = require("../lib/helper");
+const { log, loge, sleep } = helper;
+const { sendTG, sendWX, isPortOpen } = require("../lib/net");
 const config = require("dotenv").config();
 const DEBUG = process.env.DEBUG;
 if (DEBUG) {
   console.log(config);
 }
 
-const BASE_URL = process.env.APP_BASE_URL || "http://192.168.4.1";
+let BASE_URL = process.env.APP_BASE_URL || "http://192.168.4.1";
 
 const BOOT_TIME = Date.now();
 let gTaskCount = 0;
-
-function log(...args) {
-  console.log(...[dayjs(new Date()).format("YYYY-MM-DD HH:mm:ss"), ...args]);
-}
-
-function loge(...args) {
-  console.error(...[dayjs(new Date()).format("YYYY-MM-DD HH:mm:ss"), ...args]);
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+let gForwarded = new Set();
 
 var gQop,
   gCount = 1,
@@ -197,7 +188,7 @@ async function parseAuthParams(params) {
     gNonce = getValue(arr[2]);
     gQop = getValue(arr[3]);
   } catch (error) {
-    loge("parseAuthParams: error", error);
+    loge("parseAuthParams: error", String(error));
   }
 }
 
@@ -275,7 +266,7 @@ async function doLogin(fetchParams = true) {
     log("do login success:", ret, res.status);
     return ret;
   } catch (error) {
-    loge("do login failed:", error);
+    loge("do login failed:", String(error));
   }
   return false;
 }
@@ -303,7 +294,7 @@ async function doRequest(jsonName, body = undefined) {
     headers: {
       Authorization: authHeader,
     },
-    timeout: 2000,
+    timeout: 3000,
   });
   // log("request res:", res.status, res.headers.get("WWW-Authenticate") || "OK");
   return res;
@@ -506,6 +497,18 @@ async function smsFilter(data) {
   return items.map((it) => _.pick(it, allowed));
 }
 
+async function smsReadByMsg(msg) {
+  const msgId = msg.index;
+  if (msgId.includes(",")) {
+    const ids = msgId.split(",");
+    for (const id of ids) {
+      id && (await smsRead(id));
+    }
+  } else {
+    await smsRead(msgId);
+  }
+}
+
 /**
  * sms inbox check all
  * @returns nothing
@@ -599,26 +602,33 @@ async function smsCheck() {
     log("smsCheck: no unread messages.");
     return;
   }
+  let dupMsgs = newMsgs.filter((it) => gForwarded.has(it.index));
+  if (dupMsgs && dupMsgs.length > 0) {
+    for (const msg of dupMsgs) {
+      await smsReadByMsg(msg);
+    }
+  }
+  if (dupMsgs.length === newMsgs.length) {
+    log("smsCheck: ignore duplicate messages.");
+    return;
+  }
   // log(newMsgs);
   // forward and read sms
   for (const msg of newMsgs) {
     log("smsCheck: processing", msg.index, msg.sender, msg.subject);
+    if (gForwarded.has(msg.index)) {
+      log("smsCheck: ignore duplicate", msg.index);
+      continue;
+    }
     const title = `来自 ${msg.sender} 的短信`;
     const dt = dayjs(msg.received).format("YYYY-MM-DD HH:mm:ss Z");
     const desp = `\n${msg.subject} (${dt})`;
-    await helper.sendTG(title, desp);
-    const sent = await helper.sendWX(title, desp);
+    const sent = await sendWX(title, desp);
     if (sent) {
-      const msgId = msg.index;
-      if (msgId.includes(",")) {
-        const ids = msgId.split(",");
-        for (const id of ids) {
-          id && (await smsRead(id));
-        }
-      } else {
-        await smsRead(msgId);
-      }
+      gForwarded.add(msg.index);
+      await smsReadByMsg(msg);
     }
+    await sendTG(title, desp);
     await sleep(1000);
   }
 }
@@ -633,7 +643,17 @@ async function main(intervalSecs = 5) {
   });
   const job = new toad.SimpleIntervalJob({ seconds: intervalSecs }, task);
   scheduler.addSimpleIntervalJob(job);
+  if ((!(await isPortOpen("192.168.4.1")), 80)) {
+    BASE_URL = "http://lte.mcxiaoke.com";
+  }
+  log("smsCheck BASE_URL:", BASE_URL);
   log("smsCheck scheduled task started!");
 }
 
-module.exports.main = main;
+module.exports = {
+  smsDelete,
+  smsRead,
+  smsSend,
+  smsCheck,
+  main,
+};

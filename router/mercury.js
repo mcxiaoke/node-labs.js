@@ -1,10 +1,6 @@
 const fetch = require("node-fetch");
-const HttpsProxyAgent = require("https-proxy-agent");
-const { URLSearchParams, URL } = require("url");
-const dayjs = require("dayjs");
 const _ = require("lodash");
-const toad = require("toad-scheduler");
-const helper = require("../lib/helper");
+const { log, loge } = require("../lib/helper");
 const config = require("dotenv").config();
 const DEBUG = process.env.DEBUG;
 if (DEBUG) {
@@ -55,21 +51,20 @@ async function login() {
       password: orgAuthPwd(PASSWORD),
     },
   };
-  console.log("login req:", body);
+  log("login req:", body);
   try {
     const res = await fetch(BASE_URL + "/", {
       method: "POST",
       body: JSON.stringify(body),
     });
     const data = await res.json();
-    console.log("login res:", res.status, data);
+    log("login res:", res.status, JSON.stringify(data));
     if (res.ok && data["error_code"] === 0) {
       gToken = data["stok"];
-      console.log("login token:", gToken);
       return gToken;
     }
   } catch (error) {
-    console.error("login err:", lerror);
+    loge("login err:", String(error));
   }
 }
 
@@ -83,24 +78,30 @@ async function request(body, retry = false) {
   if (!gToken) {
     return { error: new Error("need auth token") };
   }
-  console.log("request req:", retry, body);
+  if (DEBUG) {
+    log(
+      `request body:${JSON.stringify(body)} token:${Boolean(
+        gToken
+      )} retry:${retry}`
+    );
+  }
   try {
     const res = await fetch(BASE_URL + "/stok=" + gToken + "/ds", {
       method: "POST",
       body: JSON.stringify(body),
     });
     if (res.status === 401 && !retry) {
-      console.error("request unauthorized, retry login");
+      loge("request unauthorized, retry login");
       gToken = null;
       await login();
       await request(body, true);
     }
     const data = await res.json();
-    console.log("request res:", res.status);
-    // console.log("request data:",data);
+    // log("request res:", res.status);
+    // log("request data:",data);
     return { data: data };
   } catch (error) {
-    console.error("request err:", error);
+    loge("request err:", String(error));
     return { error: error };
   }
 }
@@ -129,7 +130,7 @@ async function getWANStatus() {
   }
 }
 
-async function getOnlineHosts() {
+async function getOnlineHosts(filterFn) {
   const body = {
     method: "get",
     hosts_info: {
@@ -138,10 +139,19 @@ async function getOnlineHosts() {
   };
   const result = await request(body);
   if (result && result.data) {
+    // wifi_mode 0: 2.4G, 1: 5G
+    // type 0: Eth 1: WiFi
     // const allowedKeys = ["mac", "ip", "hostname", "wifi_mode", "type"];
     const allowedKeys = ["mac", "ip", "hostname"];
     let hosts = result.data["hosts_info"]["host_info"];
-    return hosts.map((it) => _.pick(Object.values(it)[0], allowedKeys));
+    hosts = hosts.map((it) => {
+      return _.pick(Object.values(it)[0], allowedKeys);
+    });
+    hosts.forEach((it) => {
+      it["hostname"] = decodeURIComponent(it["hostname"]);
+      it["date"] = Date.now();
+    });
+    return hosts.filter(filterFn || Boolean);
   }
 }
 

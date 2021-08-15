@@ -1,19 +1,29 @@
-const { login, getWANStatus, getOnlineHosts } = require("./mercury");
-const { setUnion, setIntersection, setDifference } = require("../lib/misc");
+const path = require("path");
+const fs = require("fs-extra");
+const dayjs = require("dayjs");
+const toad = require("toad-scheduler");
+const helper = require("../lib/helper");
+const { log, loge, sleep, humanTime } = helper;
+const { sendTG, sendWX } = require("../lib/net");
+const { getWANStatus, getOnlineHosts } = require("./mercury");
 
-const MAC_WHITELIST = new Set([
-  "00-95-69-92-e5-1e", //CS-C2C-Camera
-  "48-0f-cf-5d-97-f9", //hp400g1-lan
-  "6c-19-8f-b6-44-fe", //hp400g1-wifi
-  "7c-c3-a1-9d-84-b7", //Mius-iMac
-  "9c-b6-54-a9-03-57", //N54L
-  "b0-59-47-9b-fc-df", //360_CAMERA
-  "b8-27-eb-74-f2-6c", //N1WiFi
-  "b8-e8-56-48-a9-68", //Xiaokes-Mac
-  "ca-2f-72-86-8d-9d", //N1LAN
-  "f6-b8-86-bc-22-b9", //T1BoxLAN
-  "f8-46-1c-07-22-e6", //PS4LAN
-]);
+const BOOT_TIME = Date.now();
+let gTaskCount = 0;
+let gMacSet = new Set();
+let gHosts = [];
+let gLastChanged = {};
+
+const toS = (v) => "{" + Object.values(v).join(",") + "}";
+
+function strObj(o) {
+  if (Array.isArray(o)) {
+    return o.map((v) => toS(v)).join("|");
+  } else if (typeof o === "object") {
+    return toS(o);
+  } else {
+    return o;
+  }
+}
 
 /**
  * difference element: setA - setB
@@ -29,60 +39,110 @@ function diffSet(setA, setB) {
   return _difference;
 }
 
-let gMacSet = new Set();
-let gHosts = [];
+async function filelog(...args) {
+  const timestamp = dayjs(new Date()).format("YYYY-MM-DD HH:mm:ss");
+  args.unshift({ t: timestamp });
+  const logdir = path.join(__dirname, "logs");
+  if (!(await fs.pathExists(logdir))) {
+    await fs.mkdirp(logdir);
+  }
+  const dt = dayjs(new Date()).format("YYYYMM");
+  const logfile = path.join(logdir, `monitor-log-${dt}.txt`);
+  try {
+    await fs.appendFile(logfile, JSON.stringify(args) + "\n");
+  } catch (error) {
+    loge("filelog: failed to write log file", error);
+  }
+}
+
+const strDate = (d) => dayjs(d).format("YYYY-MM-DD HH:mm:ss");
+
+async function sendReport(upHosts, downHosts) {
+  upHosts = upHosts || {};
+  downHosts = downHosts || {};
+  for (const h of upHosts) {
+    await sleep(1000);
+    const title = `Device Online: ${h.hostname || h.ip}`;
+    const desp = `Name: ${h.hostname} \nIP: ${h.ip} \nMAC: ${
+      h.mac
+    } \nTime: ${strDate(h.date)}`;
+    await sendTG(title, desp);
+    await sendWX(title, desp);
+  }
+  for (const h of downHosts) {
+    await sleep(1000);
+    const title = `Device Offline: ${h.hostname || h.ip}`;
+    const desp = `Name: ${h.hostname} \nIP: ${h.ip} \nMAC: ${
+      h.mac
+    } \nTime: ${strDate(h.date)}`;
+    await sendTG(title, desp);
+    await sendWX(title, desp);
+  }
+}
 
 async function check() {
+  ++gTaskCount;
   let hosts = (await getOnlineHosts()) || [];
   if (!hosts || hosts.length === 0) {
-    console.log("check: failed to get online hosts");
+    log("check: failed to get online hosts");
     return;
   }
-  console.log(`check: online hosts ${gHosts.length} => ${hosts.length}`);
+  const jsonConfig = require("../lib/private.json")["APP_WHITELIST"];
+  WHITELIST = new Set(jsonConfig);
+  log(
+    `check(${gTaskCount}): online hosts ${gHosts.length} => ${hosts.length} up time:`,
+    humanTime(BOOT_TIME)
+  );
   let macSet = new Set(hosts.map((it) => it["mac"]));
-  if (gHosts && gHosts.length > 0) {
-    const upmac = diffSet(macSet, gMacSet);
-    const downmac = diffSet(gMacSet, macSet);
-    (upmac.size > 0 || downmac.size > 0) &&
-      console.log("check:", upmac, downmac);
-    // const allHosts = Array.from(new Set([...hosts, ...gHosts]));
-    let upHosts = hosts.filter((it) => upmac.has(it["mac"]));
-    let downHosts = gHosts.filter((it) => downmac.has(it["mac"]));
-    upHosts.length > 0 && console.log("UP:", upHosts);
-    downHosts.length > 0 && console.log("DOWN:", downHosts);
-    upHosts = upHosts.filter((it) => MAC_WHITELIST.has(it["mac"]));
-    downHosts = downHosts.filter((it) => MAC_WHITELIST.has(it["mac"]));
-    upHosts.length > 0 && console.log("Connected:", upHosts);
-    downHosts.length > 0 && console.log("Disconnected:", downHosts);
+  // keep old data
+  const oldMacSet = gMacSet;
+  const oldHosts = gHosts;
+  // update old data
+  gMacSet = macSet;
+  gHosts = hosts;
+
+  if (!oldHosts || oldHosts.length == 0) {
+    // first time init, ignore compare hosts
+    return;
   }
-  if (hosts && hosts.length > 0) {
-    gMacSet = macSet;
-    gHosts = hosts;
+
+  const upMac = diffSet(macSet, oldMacSet);
+  const downMac = diffSet(oldMacSet, macSet);
+  let upHosts = hosts.filter((it) => upMac.has(it["mac"]));
+  let downHosts = oldHosts.filter((it) => downMac.has(it["mac"]));
+  if (upHosts.length == 0 && downHosts.length == 0) {
+    return;
   }
+  log("check:", "up:", strObj(upHosts), "down:", strObj(downHosts));
+
+  if (WHITELIST && WHITELIST.size > 0) {
+    upHosts = upHosts.filter((it) => WHITELIST.has(it["mac"]));
+    downHosts = downHosts.filter((it) => WHITELIST.has(it["mac"]));
+  }
+
+  if (upHosts.length == 0 && downHosts.length == 0) {
+    return;
+  }
+  log("Online:", upHosts, "Offline:", downHosts);
+  gLastChanged = { up: upHosts, down: downHosts };
+  await filelog(gLastChanged);
+  await sendReport(upHosts, downHosts);
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+async function main(intervalSecs = 20) {
+  const scheduler = new toad.ToadScheduler();
+  const task = new toad.AsyncTask("check", check, (err) => {
+    loge("check:", err);
+  });
+  const job = new toad.SimpleIntervalJob({ seconds: intervalSecs }, task);
+  scheduler.addSimpleIntervalJob(job);
+  log("check scheduled task started!");
 }
+
+main();
 
 async function test() {
-  while (true) {
-    check();
-    await sleep(5000);
-  }
-  //   let a = new Set([1, 2, 3, 4, 5, 6]);
-  //   let b = new Set([1, 3, 5, 7]);
-  //   let c = new Set([2, 4, 6, 8]);
-  //   let d = new Set([2, 4]);
-  //   console.log(diffSet(a, b));
-  //   console.log(diffSet(b, a));
-  //   console.log(diffSet(a, c));
-  //   console.log(diffSet(c, a));
-  //   console.log(diffSet(a, d));
-  //   console.log(diffSet(d, a));
-  //   console.log(diffSet(c, d));
-  //   console.log(diffSet(d, c));
+  await sendTG("hello", "this is a message");
 }
 
-// check();
-test();
+// test();
