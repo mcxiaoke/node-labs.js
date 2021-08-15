@@ -6,6 +6,7 @@ const { md5: hex_md5 } = require("pure-md5");
 const helper = require("../lib/helper");
 const { log, loge, sleep } = helper;
 const { sendTG, sendWX, isPortOpen } = require("../lib/net");
+const { sendSMSMail } = require("../lib/mail");
 const config = require("dotenv").config();
 const DEBUG = process.env.DEBUG;
 if (DEBUG) {
@@ -629,6 +630,7 @@ async function smsCheck() {
       await smsReadByMsg(msg);
     }
     await sendTG(title, desp);
+    await sendSMSMail(msg.sender, msg.subject);
     await sleep(1000);
   }
 }
@@ -637,15 +639,16 @@ async function smsCheck() {
  * sms check task running forever
  */
 async function main(intervalSecs = 5) {
+  // if ((!(await isPortOpen("192.168.4.1")), 80)) {
+  if (process.platform.includes("win")) {
+    BASE_URL = "http://lte.mcxiaoke.com";
+  }
   const scheduler = new toad.ToadScheduler();
   const task = new toad.AsyncTask("smsCheck", smsCheck, (err) => {
     loge("smsCheck:", err);
   });
   const job = new toad.SimpleIntervalJob({ seconds: intervalSecs }, task);
   scheduler.addSimpleIntervalJob(job);
-  if ((!(await isPortOpen("192.168.4.1")), 80)) {
-    BASE_URL = "http://lte.mcxiaoke.com";
-  }
   log("smsCheck BASE_URL:", BASE_URL);
   log("smsCheck scheduled task started!");
 }
