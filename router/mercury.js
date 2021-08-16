@@ -94,12 +94,15 @@ async function request(body, retry = false) {
       loge("request unauthorized, retry login");
       gToken = null;
       await login();
-      await request(body, true);
+      return await request(body, true);
     }
-    const data = await res.json();
-    // log("request res:", res.status);
-    // log("request data:",data);
-    return { data: data };
+    if (res.ok) {
+      // log("request res:", res.status);
+      // log("request data:",data);
+      return { data: await res.json() };
+    } else {
+      throw new Error(res.status + ":" + (await res.text()));
+    }
   } catch (error) {
     loge("request err:", String(error));
     return { error: error };
@@ -138,7 +141,7 @@ async function getOnlineHosts(filterFn) {
     },
   };
   const result = await request(body);
-  if (result && result.data) {
+  if (result && result.data && result.data["error_code"] === 0) {
     // wifi_mode 0: 2.4G, 1: 5G
     // type 0: Eth 1: WiFi
     // const allowedKeys = ["mac", "ip", "hostname", "wifi_mode", "type"];
@@ -152,6 +155,8 @@ async function getOnlineHosts(filterFn) {
       it["date"] = Date.now();
     });
     return hosts.filter(filterFn || Boolean);
+  } else {
+    loge("get online hosts err:", String(result.error));
   }
 }
 
