@@ -21,7 +21,6 @@
   },
   "homepage": "https://github.com/mcxiaoke/dongle-mgr.js#readme",
   "dependencies": {
-    "axios": "^0.21.1",
     "dayjs": "^1.10.6",
     "dotenv": "^10.0.0",
     "fs-extra": "^10.0.0",

@@ -147,6 +147,7 @@ async function getOnlineHosts(filterFn) {
     // const allowedKeys = ["mac", "ip", "hostname", "wifi_mode", "type"];
     const allowedKeys = ["mac", "ip", "hostname"];
     let hosts = result.data["hosts_info"]["host_info"];
+    hosts = hosts.filter((it) => it["ip"] !== "0.0.0.0");
     hosts = hosts.map((it) => {
       return _.pick(Object.values(it)[0], allowedKeys);
     });

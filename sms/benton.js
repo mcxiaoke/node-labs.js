@@ -1,10 +1,12 @@
 const dayjs = require("dayjs");
+const fs = require("fs-extra");
+const path = require("path");
 const _ = require("lodash");
 const fetch = require("node-fetch");
 const { md5: hex_md5 } = require("pure-md5");
 const helper = require("../lib/helper");
 const { log, loge, sleep } = helper;
-const { sendTG, sendWX, isPortOpen } = require("../lib/net");
+const { sendTG, sendWX } = require("../lib/net");
 const { sendSMSMail } = require("../lib/mail");
 const config = require("dotenv").config();
 const DEBUG = process.env.DEBUG;
@@ -12,11 +14,15 @@ if (DEBUG) {
   console.log(config);
 }
 
+const REGEX_CODE = /(?:验证码|Code)\D*(\d{4,8})\D?/i;
 let BASE_URL = process.env.APP_BASE_URL || "http://192.168.4.1";
 
 const BOOT_TIME = Date.now();
 let gTaskCount = 0;
-let gForwarded = new Set();
+let gMarkRead = new Set();
+let gTGSent = new Set();
+let gWXSent = new Set();
+let gMailSent = new Set();
 
 var gQop,
   gCount = 1,
@@ -30,6 +36,25 @@ function clearAuthheader() {
   gQop = "";
   gCount = "";
   gRealm = "";
+}
+
+function getVerifyCode(text) {
+  const m = text && REGEX_CODE.exec(text);
+  return Array.isArray(m) ? m[1] : null;
+}
+
+async function saveReadMark() {
+  if (gMarkRead.size > 0) {
+    await fs.writeJSON(path.join(__dirname, "read.json"), [...gMarkRead]);
+  }
+}
+
+async function loadReadMark() {
+  const f = path.join(__dirname, "read.json");
+  if (await fs.pathExists(f)) {
+    const r = await fs.readJSON(f);
+    gMarkRead = new Set(r || []);
+  }
 }
 
 function parseSmsTime(recvTime) {
@@ -332,16 +357,13 @@ async function sendRequest(jsonName, body = undefined) {
         throw Error("login failed");
       }
     }
-    const data = await res.text();
-    // log("send request data:", data);
-    if (data && data.length > 0) {
-      const json = JSON.parse(data);
-      if (json) {
-        return helper.convertValue(json);
-      }
+    if (res.ok) {
+      return helper.convertValue(await res.json());
+    } else {
+      loge("send request failed:", res.status, await res.text());
     }
   } catch (error) {
-    loge("send request ", String(error), jsonName);
+    loge("send request error:", String(error), jsonName);
   }
 }
 
@@ -497,16 +519,20 @@ async function smsFilter(data) {
   return items.map((it) => _.pick(it, allowed));
 }
 
-async function smsReadByMsg(msg) {
+async function smsMarkRead(msg) {
+  let r;
   const msgId = msg.index;
   if (msgId.includes(",")) {
     const ids = msgId.split(",");
     for (const id of ids) {
-      id && (await smsRead(id));
+      if (id) {
+        r = await smsRead(id);
+      }
     }
   } else {
-    await smsRead(msgId);
+    r = await smsRead(msgId);
   }
+  r && gMarkRead.add(msgId);
 }
 
 /**
@@ -518,7 +544,10 @@ async function smsCheck() {
   if (DEBUG) {
     console.log("------------------------------", gTaskCount);
   }
-  log(`smsCheck(${gTaskCount}) up time:`, helper.humanTime(BOOT_TIME));
+  if (gTaskCount % 120 === 0) {
+    //120*5=10minutes
+    log(`smsCheck(${gTaskCount}) up time:`, helper.humanTime(BOOT_TIME));
+  }
   // GET_RCV_SMS_LOCAL 本地收件箱
   // GET_SENT_SMS_LOCAL 本地发件箱
   // GET_SIM_SMS SIM卡收件箱
@@ -560,7 +589,7 @@ async function smsCheck() {
   }
   let unreadNum = status["sms_unread_long_num"] || 0;
   if (unreadNum == 0) {
-    log("smsCheck: no unread messages.", gTaskCount);
+    // log("smsCheck: no unread messages.", gTaskCount);
     return;
   }
   log("smsCheck: sms unread count:", status["sms_unread_long_num"]);
@@ -571,14 +600,14 @@ async function smsCheck() {
   }
   if (status["sms_nv_rev_num"] + 20 > status["sms_nv_rev_total"]) {
     // todo clear old sms items
-    const total = status["sms_nv_rev_total"];
-    const num = status["sms_nv_rev_num"];
-    loge("smsCheck: no enough space:", num, total);
-    const toDeleteIDs = Array(Math.floor(num / 2))
-      .fill()
-      .map((v, i) => `LRCV${i + 1}`);
-    log(toDeleteIDs);
-    await smsDelete(toDeleteIDs);
+    // const total = status["sms_nv_rev_total"];
+    // const num = status["sms_nv_rev_num"];
+    // loge("smsCheck: no enough space:", num, total);
+    // const toDeleteIDs = Array(Math.floor(num / 2))
+    //   .fill()
+    //   .map((v, i) => `LRCV${i + 1}`);
+    // log(toDeleteIDs);
+    // await smsDelete(toDeleteIDs);
   }
   unreadNum =
     status["sms_nv_unread_long"] ||
@@ -602,10 +631,10 @@ async function smsCheck() {
     log("smsCheck: no unread messages.");
     return;
   }
-  let dupMsgs = newMsgs.filter((it) => gForwarded.has(it.index));
+  let dupMsgs = newMsgs.filter((it) => gMarkRead.has(it.index));
   if (dupMsgs && dupMsgs.length > 0) {
     for (const msg of dupMsgs) {
-      await smsReadByMsg(msg);
+      await smsMarkRead(msg);
     }
   }
   if (dupMsgs.length === newMsgs.length) {
@@ -616,22 +645,37 @@ async function smsCheck() {
   // forward and read sms
   for (const msg of newMsgs) {
     log("smsCheck: processing", msg.index, msg.sender, msg.subject);
-    if (gForwarded.has(msg.index)) {
+    if (gMarkRead.has(msg.index)) {
       log("smsCheck: ignore duplicate", msg.index);
       continue;
     }
-    const title = `来自 ${msg.sender} 的短信`;
+    let title = `来自 ${msg.sender} 的短信`;
     const dt = dayjs(msg.received).format("YYYY-MM-DD HH:mm:ss Z");
-    const desp = `\n${msg.subject} (${dt})`;
-    const sent = await sendWX(title, desp);
-    if (sent) {
-      gForwarded.add(msg.index);
-      await smsReadByMsg(msg);
+    let desp = `${msg.subject} <${msg.sender}> (${dt})`;
+    if (!gWXSent.has(msg.index)) {
+      const st = await sendWX(title, desp);
+      if (st) {
+        gWXSent.add(msg.index);
+        // async mark, no wait
+        await smsMarkRead(msg);
+      }
     }
-    await sendTG(title, desp);
-    await sendSMSMail(msg.sender, msg.subject);
+    // 防止重复发送
+    if (!gTGSent.has(msg.index)) {
+      let title2;
+      const code = getVerifyCode(msg.subject);
+      if (code) {
+        title2 = `验证码 ${code} (来自 ${msg.sender})`;
+      }
+      (await sendTG(title2 || title, desp)) && gTGSent.add(msg.index);
+    }
+    if (!gMailSent.has(msg.index)) {
+      (await sendSMSMail(msg.sender, msg.subject)) && gMailSent.add(msg.index);
+    }
+
     await sleep(1000);
   }
+  await saveReadMark();
 }
 
 function setBaseUrl(url) {
@@ -646,3 +690,5 @@ module.exports = {
   smsCheck,
   setBaseUrl,
 };
+
+loadReadMark();
