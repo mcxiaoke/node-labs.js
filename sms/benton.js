@@ -312,7 +312,7 @@ async function doRequest(jsonName, body = undefined) {
     log("request api:", method, jsonName, body || "");
   }
   const authHeader = getAuthHeader(method.toUpperCase());
-  // log("request auth:", authHeader);
+  // DEBUG && log("request auth:", authHeader);
   const res = await fetch(url, {
     method: method.toUpperCase(),
     body: body && typeof body == "object" && JSON.stringify(body),
@@ -321,7 +321,12 @@ async function doRequest(jsonName, body = undefined) {
     },
     timeout: 3000,
   });
-  // log("request res:", res.status, res.headers.get("WWW-Authenticate") || "OK");
+  DEBUG &&
+    log(
+      "request res:",
+      res.status,
+      res.headers.get("WWW-Authenticate") || "OK"
+    );
   return res;
 }
 
@@ -343,7 +348,7 @@ async function sendRequest(jsonName, body = undefined) {
         throw Error("login failed!");
       }
     } else {
-      // log("send request auth info found");
+      // DEBUG && log("send request auth info found");
     }
     let res = await doRequest(jsonName, body);
     if (res.headers.has("WWW-Authenticate")) {
@@ -540,11 +545,15 @@ async function smsMarkRead(msg) {
  * @returns nothing
  */
 async function smsCheck() {
+  if (new Date().getHours() < 9) {
+    // skip when in night
+    return;
+  }
   ++gTaskCount;
   if (DEBUG) {
     console.log("------------------------------", gTaskCount);
   }
-  if (gTaskCount % 120 === 0) {
+  if (DEBUG || gTaskCount % 120 === 0) {
     //120*5=10minutes
     log(`smsCheck(${gTaskCount}) up time:`, helper.humanTime(BOOT_TIME));
   }
@@ -589,7 +598,7 @@ async function smsCheck() {
   }
   let unreadNum = status["sms_unread_long_num"] || 0;
   if (unreadNum == 0) {
-    // log("smsCheck: no unread messages.", gTaskCount);
+    DEBUG && log("smsCheck: no unread messages.", gTaskCount);
     return;
   }
   log("smsCheck: sms unread count:", status["sms_unread_long_num"]);
@@ -598,16 +607,21 @@ async function smsCheck() {
     loge("smsCheck: failed to get inbox status.");
     return;
   }
-  if (status["sms_nv_rev_num"] + 20 > status["sms_nv_rev_total"]) {
+  DEBUG && log("smsCheck: inbox status:", status);
+  if (status["sms_nv_rev_num"] * 2 > status["sms_nv_rev_total"]) {
     // todo clear old sms items
-    // const total = status["sms_nv_rev_total"];
-    // const num = status["sms_nv_rev_num"];
-    // loge("smsCheck: no enough space:", num, total);
-    // const toDeleteIDs = Array(Math.floor(num / 2))
-    //   .fill()
-    //   .map((v, i) => `LRCV${i + 1}`);
-    // log(toDeleteIDs);
-    // await smsDelete(toDeleteIDs);
+    const total = status["sms_nv_rev_total"];
+    const num = status["sms_nv_rev_long_num"];
+    loge("smsCheck: inbox needs clean ", num, total);
+    const ibx = await smsGetInbox(Math.floor(num / 10) + 1, 10);
+    if (ibx["Item"] && ibx["Item"].length > 0) {
+      let toDeleteIDs = ibx["Item"]
+        .map((it) => it.index.split(","))
+        .flat()
+        .filter(Boolean);
+      log("smsCheck: delete old:", toDeleteIDs);
+      await smsDelete(toDeleteIDs);
+    }
   }
   unreadNum =
     status["sms_nv_unread_long"] ||
@@ -656,7 +670,6 @@ async function smsCheck() {
       const st = await sendWX(title, desp);
       if (st) {
         gWXSent.add(msg.index);
-        // async mark, no wait
         await smsMarkRead(msg);
       }
     }

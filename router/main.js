@@ -11,7 +11,10 @@ async function main(intervalSecs = 120) {
   const task = new toad.AsyncTask("lanCheck", lanCheck, (err) => {
     loge("lanCheck:", err);
   });
-  const job = new toad.SimpleIntervalJob({ seconds: intervalSecs }, task);
+  const job = new toad.SimpleIntervalJob(
+    { seconds: intervalSecs, runImmediately: true },
+    task
+  );
   scheduler.addSimpleIntervalJob(job);
   log("lanCheck: scheduled task started!");
 }

@@ -12,7 +12,10 @@ async function main(intervalSecs = 5) {
   const task = new toad.AsyncTask("smsCheck", smsCheck, (err) => {
     loge("smsCheck:", err);
   });
-  const job = new toad.SimpleIntervalJob({ seconds: intervalSecs }, task);
+  const job = new toad.SimpleIntervalJob(
+    { seconds: intervalSecs, runImmediately: true },
+    task
+  );
   scheduler.addSimpleIntervalJob(job);
   log("smsCheck: scheduled task started!");
 }

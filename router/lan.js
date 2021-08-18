@@ -87,8 +87,7 @@ async function lanCheck() {
     log("lanCheck: failed to get online hosts");
     return;
   }
-  const jsonConfig = require("../lib/private.json")["APP_WHITELIST"];
-  WHITELIST = new Set(jsonConfig);
+  WHITELIST = new Set(require("../lib/data/whitelist.json"));
   log(
     `lanCheck(${gTaskCount}): online hosts ${gHosts.length} => ${hosts.length} up time:`,
     humanTime(BOOT_TIME)
