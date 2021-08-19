@@ -45,12 +45,16 @@ function getVerifyCode(text) {
 
 async function saveReadMark() {
   if (gMarkRead.size > 0) {
-    await fs.writeJSON(path.join(__dirname, "read.json"), [...gMarkRead]);
+    try {
+      await fs.writeJSON(path.join(__dirname, "sms-read.json"), [...gMarkRead]);
+    } catch (error) {
+      loge("saveReadMark error:", error);
+    }
   }
 }
 
 async function loadReadMark() {
-  const f = path.join(__dirname, "read.json");
+  const f = path.join(__dirname, "sms-read.json");
   if (await fs.pathExists(f)) {
     const r = await fs.readJSON(f);
     gMarkRead = new Set(r || []);
@@ -397,10 +401,10 @@ async function smsDelete(ids) {
   if (!result) {
     loge("smsDelete: failed to delete", ids);
   } else {
-    // log(result);
+    DEBUG && log(result);
     log("smsDelete: success to delete", ids);
+    return true;
   }
-  return result;
 }
 
 /**
@@ -423,10 +427,10 @@ async function smsRead(msgId) {
   if (!result) {
     loge("smsRead: failed to read", msgId);
   } else {
-    // log(result);
+    DEBUG && log(result);
     log("smsRead: success to read", msgId);
+    return true;
   }
-  return result;
 }
 
 /**
@@ -462,10 +466,10 @@ async function smsSend(phoneNo, text) {
   if (!result) {
     loge("smsSend: failed to send", phoneNo, text);
   } else {
-    // log(result);
+    DEBUG && log(result);
     log("smsSend: success to send", phoneNo, text);
+    return true;
   }
-  return result;
 }
 
 /**
@@ -493,14 +497,14 @@ function smsDecode(data) {
  * @param {*} perPage count per index
  * @returns decoded sms inbox
  */
-async function smsGetInbox(pageNo = 1, perPage = 10) {
+async function smsInbox(pageNo = 1, perPage = 10) {
   // sms inbox
   let body = {
     message_flag: "GET_RCV_SMS_LOCAL",
     page_number: pageNo,
     data_per_page: perPage,
   };
-  // log("smsGetInbox", body);
+  // log("smsInbox", body);
   const result = await sendRequest("message", body);
   return smsDecode(result);
 }
@@ -525,19 +529,74 @@ async function smsFilter(data) {
 }
 
 async function smsMarkRead(msg) {
-  let r;
   const msgId = msg.index;
+  let r = await smsRead(msgId);
   if (msgId.includes(",")) {
     const ids = msgId.split(",");
     for (const id of ids) {
       if (id) {
-        r = await smsRead(id);
+        r = (await smsRead(id)) || r;
       }
     }
   } else {
-    r = await smsRead(msgId);
+    r = (await smsRead(msgId)) || r;
   }
+  log("smsMarkRead res:", msgId, r || "false");
   r && gMarkRead.add(msgId);
+}
+
+/**
+ * save sms to file
+ * @param {*} inbox sms
+ */
+async function smsStore(inbox) {
+  try {
+    const items = inbox["Item"] || [];
+    const inboxDir = path.join(__dirname, "inbox");
+    if (!(await fs.pathExists(inboxDir))) {
+      await fs.mkdirp(inboxDir);
+    }
+    for (const item of items) {
+      const dstName = `sms-item-${item.index}-${Date.now()}.txt`;
+      const dstFile = path.join(inboxDir, dstName);
+      await fs.writeJSON(dstFile, item, { spaces: 2 });
+      log("smsStore ok:", item.index, item.sender);
+    }
+  } catch (error) {
+    log("smsStore error:", error);
+  }
+}
+
+async function smsClean(status) {
+  if (status["sms_nv_rev_num"] * 2 > status["sms_nv_rev_total"]) {
+    // todo clear old sms items
+    const total = status["sms_nv_rev_total"];
+    const num = status["sms_nv_rev_long_num"];
+    loge("smsCheck: inbox needs clean ", num, total);
+    // no auto clean, just send remind message
+    const remindMsg = [
+      "4G网卡短信收件箱需要清理啦",
+      "短信收件箱快满了，请清理!! " + dayjs(Date.now()).format("_YYYYMMDD"),
+    ];
+    if (true) {
+      await sendWX(...remindMsg);
+      await sendTG(...remindMsg);
+      return;
+    }
+    const ibx = await smsInbox(Math.floor(num / 10) + 1, 10);
+    if (ibx["Item"] && ibx["Item"].length > 0) {
+      let toDeleteIDs = ibx["Item"]
+        .map((it) => it.index.split(","))
+        .flat()
+        .filter(Boolean);
+      // mark read before delete
+      for (const msg of ibx["Item"]) {
+        await smsMarkRead(msg);
+      }
+      log("smsCheck: delete old:", toDeleteIDs);
+      await smsDelete(toDeleteIDs);
+    }
+  }
 }
 
 /**
@@ -598,31 +657,16 @@ async function smsCheck() {
   }
   let unreadNum = status["sms_unread_long_num"] || 0;
   if (unreadNum == 0) {
-    DEBUG && log("smsCheck: no unread messages.", gTaskCount);
+    DEBUG && log("smsCheck: unread number is zero.", gTaskCount);
     return;
   }
-  log("smsCheck: sms unread count:", status["sms_unread_long_num"]);
+  log("smsCheck: unread count:", status["sms_unread_long_num"]);
   status = await sendRequest("message");
   if (!(typeof status == "object")) {
     loge("smsCheck: failed to get inbox status.");
     return;
   }
-  DEBUG && log("smsCheck: inbox status:", status);
-  if (status["sms_nv_rev_num"] * 2 > status["sms_nv_rev_total"]) {
-    // todo clear old sms items
-    const total = status["sms_nv_rev_total"];
-    const num = status["sms_nv_rev_long_num"];
-    loge("smsCheck: inbox needs clean ", num, total);
-    const ibx = await smsGetInbox(Math.floor(num / 10) + 1, 10);
-    if (ibx["Item"] && ibx["Item"].length > 0) {
-      let toDeleteIDs = ibx["Item"]
-        .map((it) => it.index.split(","))
-        .flat()
-        .filter(Boolean);
-      log("smsCheck: delete old:", toDeleteIDs);
-      await smsDelete(toDeleteIDs);
-    }
-  }
+  DEBUG && log("smsCheck: status:", status);
   unreadNum =
     status["sms_nv_unread_long"] ||
     status["sms_unread_long_num"] ||
@@ -632,17 +676,19 @@ async function smsCheck() {
     log("smsCheck: inbox no unread messages.");
     return;
   }
+  await smsClean(status);
   log(`smsCheck: found ${unreadNum} unread messages.`);
-  const fetchNum = Math.max(5, unreadNum + 1);
-  let inbox = await smsGetInbox(1, fetchNum);
+  let inbox = await smsInbox(1, Math.min(5, unreadNum));
   if (!inbox) {
     loge("smsCheck: failed to get inbox.");
     return;
   }
-  // log(inbox);
+  await smsStore(inbox);
+  DEBUG && log("smsCheck inbox:", inbox);
   let newMsgs = await smsFilter(inbox);
+  newMsgs = newMsgs.filter((it) => !gMarkRead.has(it.index));
   if (!newMsgs || newMsgs.length == 0) {
-    log("smsCheck: no unread messages.");
+    log("smsCheck: no new messages.");
     return;
   }
   let dupMsgs = newMsgs.filter((it) => gMarkRead.has(it.index));
@@ -658,20 +704,21 @@ async function smsCheck() {
   // log(newMsgs);
   // forward and read sms
   for (const msg of newMsgs) {
-    log("smsCheck: processing", msg.index, msg.sender, msg.subject);
+    log("smsCheck: processing", msg);
     if (gMarkRead.has(msg.index)) {
       log("smsCheck: ignore duplicate", msg.index);
+      await smsMarkRead(msg);
       continue;
     }
     let title = `来自 ${msg.sender} 的短信`;
-    const dt = dayjs(msg.received).format("YYYY-MM-DD HH:mm:ss Z");
-    let desp = `${msg.subject} <${msg.sender}> (${dt})`;
+    let desp = `${msg.subject} <${msg.sender}>`;
+    let forwardDone = false;
     if (!gWXSent.has(msg.index)) {
       const st = await sendWX(title, desp);
       if (st) {
-        gWXSent.add(msg.index);
-        await smsMarkRead(msg);
+        st && gWXSent.add(msg.index);
       }
+      forwardDone = st || forwardDone;
     }
     // 防止重复发送
     if (!gTGSent.has(msg.index)) {
@@ -680,11 +727,17 @@ async function smsCheck() {
       if (code) {
         title2 = `验证码 ${code} (来自 ${msg.sender})`;
       }
-      (await sendTG(title2 || title, desp)) && gTGSent.add(msg.index);
+      const st = await sendTG(title2 || title, desp);
+      st && gTGSent.add(msg.index);
+      forwardDone = st || forwardDone;
     }
     if (!gMailSent.has(msg.index)) {
-      (await sendSMSMail(msg.sender, msg.subject)) && gMailSent.add(msg.index);
+      const st = sendSMSMail(msg.sender, msg.subject);
+      st && gMailSent.add(msg.index);
+      forwardDone = st || forwardDone;
     }
+
+    forwardDone && (await smsMarkRead(msg));
 
     await sleep(1000);
   }
