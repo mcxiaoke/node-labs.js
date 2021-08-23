@@ -1,0 +1,11 @@
+{
+  "index": "LRCV12,LRCV11,",
+  "from": "张小可;+8618513583128",
+  "subject": "秋日惊喜！8月18日-25日，联通客户日限时秒杀，SWITCH游戏机、SKG按摩仪等好礼在线等您！点击 https://c.10010 <10655864>",
+  "received": "2021-08-23T13:37:32.000Z",
+  "status": 0,
+  "message_type": 0,
+  "class_type": 0,
+  "message_time_index": 25,
+  "sender": "+8618513583128"
+}

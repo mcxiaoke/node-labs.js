@@ -343,6 +343,7 @@ async function doRequest(jsonName, body = undefined) {
  */
 async function sendRequest(jsonName, body = undefined) {
   const hasAuth = gNonce && gNonce.length > 2 && gRealm && gRealm.length > 2;
+  let resText;
   try {
     // if (!hasAuth) {
     if (!hasAuth && jsonName !== "status") {
@@ -366,13 +367,14 @@ async function sendRequest(jsonName, body = undefined) {
         throw Error("login failed");
       }
     }
+    resText = await res.text();
     if (res.ok) {
-      return helper.convertValue(await res.json());
+      return helper.convertValue(JSON.parse(resText));
     } else {
-      loge("send request failed:", res.status, await res.text());
+      loge("send request failed:", res.status, resText);
     }
   } catch (error) {
-    loge("send request error:", String(error), jsonName);
+    loge("send request error:", String(error), jsonName, resText || "");
   }
 }
 
@@ -557,7 +559,8 @@ async function smsStore(inbox) {
       await fs.mkdirp(inboxDir);
     }
     for (const item of items) {
-      const dstName = `sms-item-${item.index}-${Date.now()}.txt`;
+      const dateStr = dayjs().format("YYYYMMDD_HHmmss");
+      const dstName = `sms-item-${item.index}-${dateStr}.txt`;
       const dstFile = path.join(inboxDir, dstName);
       await fs.writeJSON(dstFile, item, { spaces: 2 });
       log("smsStore ok:", item.index, item.sender);
@@ -576,7 +579,7 @@ async function smsClean(status) {
     // no auto clean, just send remind message
     const remindMsg = [
       "4G网卡短信收件箱需要清理啦",
-      "短信收件箱快满了，请清理!! " + dayjs(Date.now()).format("_YYYYMMDD"),
+      "短信收件箱快满了，请清理!! " + dayjs().format("_YYYYMMDD"),
     ];
     if (true) {
       await sendWX(...remindMsg);
@@ -676,6 +679,8 @@ async function smsCheck() {
     log("smsCheck: inbox no unread messages.");
     return;
   }
+  // wait 1s for long sms message
+  await sleep(1000);
   await smsClean(status);
   log(`smsCheck: found ${unreadNum} unread messages.`);
   let inbox = await smsInbox(1, Math.min(5, unreadNum));
@@ -732,7 +737,7 @@ async function smsCheck() {
       forwardDone = st || forwardDone;
     }
     if (!gMailSent.has(msg.index)) {
-      const st = sendSMSMail(msg.sender, msg.subject);
+      const st = await sendSMSMail(msg.sender, msg.subject);
       st && gMailSent.add(msg.index);
       forwardDone = st || forwardDone;
     }
