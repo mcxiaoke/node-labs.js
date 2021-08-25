@@ -8,6 +8,7 @@ const helper = require("../lib/helper");
 const { log, loge, sleep } = helper;
 const { sendTG, sendWX } = require("../lib/net");
 const { sendSMSMail } = require("../lib/mail");
+const rate = require("../lib/rate");
 const config = require("dotenv").config();
 const DEBUG = process.env.DEBUG;
 if (DEBUG) {
@@ -356,7 +357,11 @@ async function sendRequest(jsonName, body = undefined) {
       // DEBUG && log("send request auth info found");
     }
     let res = await doRequest(jsonName, body);
-    if (res.headers.has("WWW-Authenticate")) {
+    resText = await res.text();
+    if (
+      res.headers.has("WWW-Authenticate") ||
+      resText.includes("UNAUTHORIZED")
+    ) {
       loge("send request need login, retry");
       clearAuthheader();
       await parseAuthParams(res.headers.get("WWW-Authenticate"));
@@ -367,7 +372,7 @@ async function sendRequest(jsonName, body = undefined) {
         throw Error("login failed");
       }
     }
-    resText = await res.text();
+
     if (res.ok) {
       return helper.convertValue(JSON.parse(resText));
     } else {
@@ -667,6 +672,14 @@ async function smsCheck() {
   status = await sendRequest("message");
   if (!(typeof status == "object")) {
     loge("smsCheck: failed to get inbox status.");
+    if (rate.isLimitExceeded("smsCheck")) {
+      const content = [
+        "短信监控程序出错",
+        "请检查短信监控脚本 " + dayjs().format("YYYYMMDD"),
+      ];
+      await sendWX(...content);
+      await sendTG(...content);
+    }
     return;
   }
   DEBUG && log("smsCheck: status:", status);
@@ -762,4 +775,5 @@ module.exports = {
   setBaseUrl,
 };
 
+rate.config("smsCheck", 5, 10, 20);
 loadReadMark();
