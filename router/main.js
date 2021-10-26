@@ -2,7 +2,7 @@ const toad = require("toad-scheduler");
 const { log, loge } = require("../lib/helper");
 const { lanCheck } = require("./lan");
 
-async function main(intervalSecs = 120) {
+async function main(intervalSecs = 300) {
   if (process.platform.includes("win")) {
     // for dev
     intervalSecs = 10;
