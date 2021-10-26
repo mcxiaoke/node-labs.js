@@ -21,11 +21,13 @@
   },
   "homepage": "https://github.com/mcxiaoke/dongle-mgr.js#readme",
   "dependencies": {
+    "async-mqtt": "^2.6.1",
     "dayjs": "^1.10.6",
     "dotenv": "^10.0.0",
     "fs-extra": "^10.0.0",
     "https-proxy-agent": "^5.0.0",
     "lodash": "^4.17.21",
+    "mqtt": "^4.2.8",
     "node-fetch": "^2.6.1",
     "nodemailer": "^6.6.3",
     "pure-md5": "^0.1.13",
