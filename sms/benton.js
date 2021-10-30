@@ -526,7 +526,7 @@ async function smsFilter(data) {
   if (!items || items.length == 0) {
     return [];
   }
-  console.log(data);
+  // console.log(data);
   const allowed = ["index", "subject", "sender", "received"];
   items = items.filter((it) => it.subject && it.status === 0);
   // sort by message_time_index
@@ -650,7 +650,7 @@ async function smsCheck() {
   // }
   // log(device);
   let status = await sendRequest("status");
-  log("1", status);
+  // log("1", status);
   if (!(typeof status == "object")) {
     loge("smsCheck: failed to get sms status.");
     return;
@@ -671,7 +671,7 @@ async function smsCheck() {
   }
   log("smsCheck: unread count:", status["sms_unread_long_num"]);
   status = await sendRequest("message");
-  log("2", status);
+  // log("2", status);
   if (!(typeof status == "object")) {
     loge("smsCheck: failed to get inbox status.");
     if (rate.isLimitExceeded("smsCheck")) {
