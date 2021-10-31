@@ -550,7 +550,7 @@ async function smsMarkRead(msg) {
     r = (await smsRead(msgId)) || r;
   }
   log("smsMarkRead res:", msgId, r || "false");
-  r && gMarkRead.add(msgId);
+  r && gMarkRead.add(msg.sender + msg.subject);
 }
 
 /**
@@ -706,12 +706,14 @@ async function smsCheck() {
   await smsStore(inbox);
   DEBUG && log("smsCheck inbox:", inbox);
   let newMsgs = await smsFilter(inbox);
-  newMsgs = newMsgs.filter((it) => !gMarkRead.has(it.index));
+  newMsgs = newMsgs.filter((msg) => !gMarkRead.has(msg.sender + msg.subject));
   if (!newMsgs || newMsgs.length == 0) {
     log("smsCheck: no new messages.");
     return;
   }
-  let dupMsgs = newMsgs.filter((it) => gMarkRead.has(it.index));
+  let dupMsgs = newMsgs.filter((msg) =>
+    gMarkRead.has(msg.sender + msg.subject)
+  );
   if (dupMsgs && dupMsgs.length > 0) {
     for (const msg of dupMsgs) {
       await smsMarkRead(msg);
@@ -725,7 +727,7 @@ async function smsCheck() {
   // forward and read sms
   for (const msg of newMsgs) {
     log("smsCheck: processing", msg);
-    if (gMarkRead.has(msg.index)) {
+    if (gMarkRead.has(msg.sender + msg.subject)) {
       log("smsCheck: ignore duplicate", msg.index);
       await smsMarkRead(msg);
       continue;
@@ -761,7 +763,7 @@ async function smsCheck() {
 
     await sleep(1000);
   }
-  await saveReadMark();
+  // await saveReadMark();
 }
 
 function setBaseUrl(url) {
@@ -778,4 +780,4 @@ module.exports = {
 };
 
 rate.config("smsCheck", 5, 10, 20);
-loadReadMark();
+// loadReadMark();
