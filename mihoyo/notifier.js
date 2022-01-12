@@ -60,6 +60,11 @@ async function userResinCheck(uid, cookie) {
     }
     content += "\n";
     const title = "原神实时便签 " + dayjs(Date.now()).format("YYYY-MM-DD");
+    const now = dayjs();
+    if (now.hour() === 10 || now.hour() === 11) {
+      // remind on morning and night
+      shouldRemind = true;
+    }
     if (shouldRemind) {
       await sleep(1000);
       await sendWX(title, content);
