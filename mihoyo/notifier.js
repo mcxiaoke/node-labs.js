@@ -37,10 +37,28 @@ async function userResinCheck(uid, cookie) {
       `resinCheck: resinNum=${resinNum} taskNum=${taskNum} homeCoin=${homeCoin}`
     );
     let shouldRemind = false;
+    let resinRecSecs = parseInt(data["resin_recovery_time"]) || 0;
+    let resinRecMin = Math.ceil(resinRecSecs / 60);
+    let resinRecStr = ` （${Math.floor(resinRecMin / 60)}小时${
+      resinRecMin % 60
+    }分后回满）`;
+    let coinRecSecs = parseInt(data["home_coin_recovery_time"]) || 0;
+    let coinRecMin = Math.ceil(coinRecSecs / 60);
+    let coinRecStr = ` （${Math.floor(coinRecMin / 60)}小时${
+      coinRecMin % 60
+    }分后回满）`;
     let content = "";
     content += `\n★ 原粹树脂： ${data["current_resin"]}/${data["max_resin"]}`;
+    content += resinRecStr;
     content += `\n★ 洞天宝钱： ${data["current_home_coin"]}/${data["max_home_coin"]}`;
-    content += `\n★ 每日委托： ${data["finished_task_num"]}/${data["total_task_num"]}`;
+    content += coinRecStr;
+    content += `\n★ 每日委托任务： ${data["finished_task_num"]}/${data["total_task_num"]}`;
+    if (
+      data["finished_task_num"] >= data["total_task_num"] &&
+      data["is_extra_task_reward_received"]
+    ) {
+      content += " （今日奖励已领取）";
+    }
     content += "\n";
     if (data["current_resin"] > data["max_resin"] - 20) {
       content += "\n★ 注意：原粹树脂快要满了！";
@@ -61,8 +79,11 @@ async function userResinCheck(uid, cookie) {
     content += "\n";
     const title = "原神实时便签 " + dayjs(Date.now()).format("YYYY-MM-DD");
     const now = dayjs();
-    if (now.hour() === 10 || now.hour() === 11) {
+    if (now.hour() === 10 || now.hour() === 23) {
       // remind on morning and night
+      shouldRemind = true;
+    }
+    if (DEBUG) {
       shouldRemind = true;
     }
     if (shouldRemind) {
@@ -86,7 +107,7 @@ async function main(intervalSecs = 3600) {
   // run on every one hour
   if (process.platform.includes("win")) {
     // for dev
-    intervalSecs = 10;
+    intervalSecs = 60;
   }
   const scheduler = new toad.ToadScheduler();
   const task = new toad.AsyncTask("resinCheck", resinCheck, (err) => {
