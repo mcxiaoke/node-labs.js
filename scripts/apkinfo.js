@@ -4,6 +4,15 @@ const path = require("path");
 const util = require("util");
 const cconv = require("chinese-conv");
 const iconv = require("iconv-lite");
+const { createHash } = require("crypto");
+
+function sha256Hash(string) {
+  return createHash("sha256").update(string).digest("hex");
+}
+
+function hash(string) {
+  return sha256Hash(string).substring(0, 8);
+}
 
 const REGEX_UNICODE_HAN_ANY = /[\p{sc=Hani}]/u;
 const strHasHani = (str) => REGEX_UNICODE_HAN_ANY.test(str);
@@ -56,7 +65,7 @@ async function parseOne(apkfile, normalizeName = false) {
   }
   const apkDir = path.dirname(apkfile);
   const apkName = path.basename(apkfile);
-  console.log(apkfile);
+  console.log("SRC:" + apkfile);
   //   const file = path.basename(apkfile);
   const apk = new Apk(apkfile);
   try {
@@ -85,20 +94,24 @@ async function parseOne(apkfile, normalizeName = false) {
       // });
       const cert = certs[0];
       let issuer, subject;
-      if (cert.issuer.get("CN")) {
+      if (cert.issuer && cert.issuer.get("CN")) {
         issuer = Buffer.from(cert.issuer.get("CN"), "binary").toString("utf8");
         subject = Buffer.from(cert.subject.get("CN"), "binary").toString(
           "utf8"
         );
       } else {
-        issuer = null;
-        subject = null;
+        issuer = cert.serial;
+        // no CN, use serial
+        if (issuer === "47723c30") {
+          issuer = "modyolo.com";
+        }
+        // subject = hash(cert.bytes);
       }
 
-      if (issuer && subject) {
-        if (issuer !== subject) {
+      if (issuer) {
+        if (subject && issuer !== subject) {
           const sign = issuer
-            ? `${issuer.split(" ")[0]}${subject.split(" ")[0]}`
+            ? `${issuer.split(" ")[0]}-${subject.split(" ")[0]}`
             : ``;
           newName = `${label}[${sign}]-${manifest.versionName || "0.0"}-${
             manifest.versionCode
@@ -114,7 +127,7 @@ async function parseOne(apkfile, normalizeName = false) {
     }
     newName += ".apk";
     const newPath = path.join(apkDir, newName);
-    console.log(newPath);
+    console.log("DST:" + newPath);
     if (normalizeName) {
       if (newName !== apkName && !(await fs.pathExists(newPath))) {
         console.log(`Rename ${newName}`);
