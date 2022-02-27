@@ -10,6 +10,10 @@ function sha256Hash(string) {
   return createHash("sha256").update(string).digest("hex");
 }
 
+function md5Hash(string) {
+  return createHash("md5").update(string).digest("hex");
+}
+
 function hash(string) {
   return sha256Hash(string).substring(0, 8);
 }
@@ -101,12 +105,16 @@ async function parseOne(apkfile, normalizeName = false) {
         );
       } else {
         issuer = cert.serial;
+        // console.log(cert.serial);
+        // console.log(md5Hash(cert.bytes));
+        // console.log(sha256Hash(cert.bytes));
         // no CN, use serial
         if (issuer === "47723c30") {
           issuer = "modyolo.com";
         }
-        // subject = hash(cert.bytes);
       }
+
+      subject = md5Hash(cert.bytes).substring(0, 8);
 
       if (issuer) {
         if (subject && issuer !== subject) {
