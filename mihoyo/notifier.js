@@ -81,7 +81,7 @@ async function userResinCheck(uid, cookie) {
     const now = dayjs();
     if (now.hour() === 10 || now.hour() === 23) {
       // remind on morning and night
-      shouldRemind = true;
+      // shouldRemind = true;
     }
     if (DEBUG) {
       shouldRemind = true;
@@ -103,7 +103,7 @@ async function resinCheck() {
   await userResinCheck(uid, cookie);
 }
 
-async function main(intervalSecs = 3600) {
+async function main(intervalSecs = 1800) {
   // run on every one hour
   if (process.platform.includes("win")) {
     // for dev
