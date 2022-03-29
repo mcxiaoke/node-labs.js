@@ -1,0 +1,1 @@
+import wp from "wallpaper";
