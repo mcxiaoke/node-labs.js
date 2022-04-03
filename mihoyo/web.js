@@ -21,7 +21,7 @@ app.get("/", async (req, res) => {
   res.send({ code: 0, message: "Hello MiHoYo!" });
 });
 
-app.get("/dailyNote", async (req, res) => {
+app.get("/resin", async (req, res) => {
   let data = null;
   if (!req.query.force) {
     data = cache.get(kDailyNote);
@@ -34,11 +34,15 @@ app.get("/dailyNote", async (req, res) => {
       res.send(data);
       return;
     }
+    data["source"] = "api";
+    data["time_created"] = dayjs().format();
     cache.set(kDailyNote, data, expireSecs);
     log("web:api:data:", data["retcode"]);
   } else {
     log("web:cache:data:", data["retcode"]);
+    data["source"] = "cache";
   }
+  data["time_current"] = dayjs().format();
   res.send(data);
 });
 
