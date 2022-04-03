@@ -33,7 +33,7 @@ async function main() {
   const config = require(path.join(baseDir, "wallpaper.json"));
   const now = dayjs();
   const imageName =
-    now.hour() < config.fromHour || now.hour() > config.toHour
+    now.hour() <= config.fromHour || now.hour() >= config.toHour
       ? config.dark
       : config.light;
   console.log(imageName);

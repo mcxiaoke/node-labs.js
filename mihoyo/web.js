@@ -22,7 +22,10 @@ app.get("/", async (req, res) => {
 });
 
 app.get("/dailyNote", async (req, res) => {
-  let data = cache.get(kDailyNote);
+  let data = null;
+  if (!req.query.force) {
+    data = cache.get(kDailyNote);
+  }
   if (!data) {
     data = (await api.getDailyNote(uid, cookie)) || {};
     if (!data || !data["data"] || data["retcode"] !== 0) {
